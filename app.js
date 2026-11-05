@@ -54,6 +54,11 @@
     info: '<circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path>',
     server: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"></rect><rect width="20" height="8" x="2" y="14" rx="2" ry="2"></rect><line x1="6" x2="6.01" y1="6" y2="6"></line><line x1="6" x2="6.01" y1="18" y2="18"></line>',
     circleAlert: '<circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line>',
+    fileText: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path><path d="M10 9H8"></path><path d="M16 13H8"></path><path d="M16 17H8"></path>',
+    lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path><path d="M9 18h6"></path><path d="M10 22h4"></path>',
+    chevronDown: '<path d="m6 9 6 6 6-6"></path>',
+    chevronUp: '<path d="m18 15-6-6-6 6"></path>',
+    refreshCw: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path>',
     triangleAlert: domainIconMarkup["oracle-alerts"],
     activity: domainIconMarkup.performance,
     hardDrive: domainIconMarkup.capacity
@@ -341,32 +346,52 @@
     const performance = domainKey() === "performance";
     const startupTime = state.oracleOverviewData?.metrics?.find(metric => metric.label === "Démarrage instance")?.value;
     const startupDate = startupTime ? new Date(startupTime.replace(" ", "T")) : null;
-    const availability = startupDate && !Number.isNaN(startupDate.getTime())
-      ? `${Math.max(1, Math.floor((Date.now() - startupDate.getTime()) / 60000))} min`
-      : "5 min";
+    const elapsedMinutes = startupDate && !Number.isNaN(startupDate.getTime())
+      ? Math.max(1, Math.floor((Date.now() - startupDate.getTime()) / 60000))
+      : null;
+    const availability = elapsedMinutes != null
+      ? (elapsedMinutes >= 60 ? `${Math.floor(elapsedMinutes / 60)}h${elapsedMinutes % 60 ? ` ${elapsedMinutes % 60}min` : ""}` : `${elapsedMinutes}min`)
+      : (overview ? "1h 20min" : "5 min");
     const globalScore = state.oracleScores?.global;
-    const scoreValue = globalScore?.score != null ? `${globalScore.score}%` : (overview ? "—" : state.oracleConnected ? "Collecte…" : "—");
+    const demoOverviewScore = overview && !state.oracleConnected
+      ? {
+          score: 79,
+          label: "1 domaine critique : Sauvegardes",
+          tone: "amber",
+          breakdown: [
+            { domain: "performance", score: 85, tone: "green" },
+            { domain: "capacity", score: 100, tone: "green" },
+            { domain: "backups", score: 36, tone: "red" },
+            { domain: "security", score: 65, tone: "amber" },
+            { domain: "logging", score: 75, tone: "amber" },
+            { domain: "oracle-alerts", score: 97, tone: "green" }
+          ],
+          details: ["Sauvegardes à auditer", "Audits et privilèges à vérifier", "Mode journalisation à vérifier"]
+        }
+      : null;
+    const scoreData = globalScore || demoOverviewScore;
+    const scoreValue = scoreData?.score != null ? `${scoreData.score}%` : (overview ? "—" : state.oracleConnected ? "Collecte…" : "—");
     const scoreLabel = overview
-      ? 'Score de Santé ' + infoIcon
+      ? 'Score de Santé' + infoIcon
       : !state.oracleConnected ? "Score de Santé" : "Connexion active";
-    const scoreTone = globalScore?.tone || "blue";
-    const scoreBadge = globalScore ? badge(`${globalScore.label}`, scoreTone) : badge("Score non disponible", "blue");
-    const scoreProgress = globalScore?.score != null ? `<div class="score-progress" aria-hidden="true"><span style="width:${Math.max(0, Math.min(100, Number(globalScore.score) || 0))}%"></span></div>` : "";
+    const scoreTone = scoreData?.tone || "blue";
+    const scoreBadge = scoreData ? badge(`${scoreData.label}`, scoreTone) : badge("Score non disponible", "blue");
+    const scoreProgress = scoreData?.score != null ? `<div class="score-progress" aria-hidden="true"><span style="width:${Math.max(0, Math.min(100, Number(scoreData.score) || 0))}%"></span></div>` : "";
     const scoreBox = `<div class="score-box"><b>${scoreValue}</b><span>${scoreLabel}</span>${scoreProgress}<div class="tiny">${scoreBadge}</div></div>`;
 
     let scorePopover;
-    if (globalScore) {
-      const breakdownHtml = (globalScore.breakdown || []).map(item => {
+    if (scoreData) {
+      const breakdownHtml = (scoreData.breakdown || []).map(item => {
         const toneClass = item.tone === "red" ? "critical" : item.tone === "green" ? "excellent" : "good";
         const toneIcon = item.tone === "red" ? "⚠" : item.tone === "green" ? "✓" : "⌁";
         return `<div><span><i class="${toneClass}">${toneIcon}</i>${item.domain.charAt(0).toUpperCase() + item.domain.slice(1)} <small>${item.score}%</small></span><b class="${toneClass}-count">${item.score}</b></div>`;
       }).join("");
-      const detailsHtml = globalScore.details?.length
-        ? `<div class="score-popover-callout"><strong>Points d'attention</strong><span>${globalScore.details.join(" · ")}</span></div>`
+      const detailsHtml = scoreData.details?.length
+        ? `<div class="score-popover-callout"><strong>Points d'attention</strong><span>${scoreData.details.join(" · ")}</span></div>`
         : "";
       scorePopover = `<section class="score-popover" id="${overview ? "overview-score-tooltip" : "domain-score-tooltip"}" role="dialog" aria-label="Détail du score de santé">
-          <div class="score-popover-heading"><div><strong>${globalScore.score}%</strong><span class="score-popover-alert">ⓘ</span><small>Score de Santé Global</small></div><span class="score-popover-verdict">${globalScore.label}</span></div>
-          <p class="score-popover-intro">Ce score évalue l'état global de votre base Oracle selon ${(globalScore.breakdown || []).length} indicateurs pondérés par criticité.</p>
+          <div class="score-popover-heading"><div><strong>${scoreData.score}%</strong><span class="score-popover-alert">ⓘ</span><small>Score de Santé Global</small></div><span class="score-popover-verdict">${scoreData.label}</span></div>
+          <p class="score-popover-intro">Ce score évalue l'état global de votre base Oracle selon ${(scoreData.breakdown || []).length} indicateurs pondérés par criticité.</p>
           ${detailsHtml}
           <div class="score-popover-breakdown"><strong>RÉPARTITION PAR DOMAINE</strong>${breakdownHtml}</div>
           <details class="score-calculation"><summary>ⓘ　Comment est-il calculé ?</summary><p>Le score est calculé à chaque actualisation à partir des métriques Oracle collectées (SGA, PGA, CPU, tablespaces, sessions, verrous, etc.) et de leur pondération par domaine.</p></details>
@@ -387,16 +412,16 @@
       <div class="domain-nav"><div class="nav-caption">Navigation</div><nav class="nav-items">${nav}</nav></div>
       <div class="domain-bottom"><button class="side-action" data-route="/fleet">${houseIcon}Retour au parc</button></div>
     </aside><div class="main-area">
-      <header class="domain-top"><div class="domain-heading"><div class="row"><span class="pill orange">${databaseIcon}</span><div><h2 style="margin:0">${esc(connection.name === "FREEDB" ? "FREE" : connection.name)}</h2><span class="db-sep" aria-hidden="true">•</span><span class="env-pill">${esc(connection.environment === "TEST" ? "Test" : connection.environment)}</span></div></div>
+      <header class="domain-top"><div class="domain-heading"><div class="row"><span class="pill orange">${databaseIcon}</span><div><h2 style="margin:0" title="Base de données : ${esc(connection.name === "FREEDB" ? "FREE" : connection.name)}">${esc(connection.name === "FREEDB" ? "FREE" : connection.name)}</h2><span class="db-sep" aria-hidden="true">•</span><span class="env-pill">${esc(connection.environment === "TEST" ? "Test" : connection.environment)}</span></div></div>
         <div class="row"><div class="score-popover-wrap ${overview ? "overview-score-popover-wrap" : "domain-score-popover-wrap"}" tabindex="0" aria-describedby="${overview ? "overview-score-tooltip" : "domain-score-tooltip"}">${scoreBox}${scorePopover}</div>
-          <span class="tiny muted">${clockIcon}${overview ? "Actualisé il y a 0s" : state.oracleConnected ? (state.oracleOverviewData ? "Collecte terminée" : "Collecte en attente") : "Actualisé à l'instant"}</span>
-          <div class="refresh-control"><button class="btn small-btn refresh-trigger" type="button" data-action="toggle-refresh-menu" aria-haspopup="menu" aria-expanded="${state.refreshMenuOpen}">Actualisation : ${refreshLabel}<span aria-hidden="true">${state.refreshMenuOpen ? "⌃" : "⌄"}</span></button>${state.refreshMenuOpen ? `<div class="refresh-menu" role="menu" aria-label="Fréquence d'actualisation">${refreshMenu}</div>` : ""}</div>
-          <button class="btn icon-btn" data-action="refresh-domain" aria-label="Actualiser maintenant">⟳</button></div></div>
+          <span class="tiny muted">${clockIcon}${overview ? "Actualisé il y a 5s" : state.oracleConnected ? (state.oracleOverviewData ? "Collecte terminée" : "Collecte en attente") : "Actualisé à l'instant"}</span>
+          <div class="refresh-control"><button class="btn small-btn refresh-trigger" type="button" data-action="toggle-refresh-menu" aria-haspopup="menu" aria-expanded="${state.refreshMenuOpen}"><span>Actualisation : ${refreshLabel}</span>${uiIcon("chevronDown", "refresh-trigger-chevron")}</button>${state.refreshMenuOpen ? `<div class="refresh-menu" role="menu" aria-label="Fréquence d'actualisation">${refreshMenu}</div>` : ""}</div>
+          <button class="btn icon-btn" data-action="refresh-domain" aria-label="Actualiser maintenant">${uiIcon("refreshCw", "refresh-icon")}</button></div></div>
         <div class="domain-meta">${overview
-          ? `<span>Version : <b>${esc(state.oracleOverviewData?.metrics?.find(metric => metric.label === "Version")?.value || "23.0.0.0.0")}</b></span><span>◷ Disponibilité : <b>${esc(availability)}</b></span>`
+          ? `<span><span class="domain-meta-label">Version :</span><b>${esc(state.oracleOverviewData?.metrics?.find(metric => metric.label === "Version")?.value || "23.0.0.0.0")}</b></span><span class="domain-meta-separator" aria-hidden="true">|</span><span>${clockIcon}<span class="domain-meta-label">Disponibilité :</span><b>${esc(availability)}</b></span>`
           : state.oracleConnected
-            ? `<span>Version Oracle : <b>${esc(state.oracleOverviewData?.metrics?.find(m=>m.label==="Version")?.value || "en attente")}</b></span><span>Démarrage : <b>${esc(state.oracleOverviewData?.metrics?.find(m=>m.label==="Démarrage instance")?.value || state.oracleOverviewError || "en attente")}</b></span>`
-          : "<span>Version : <b>23.0.0.0.0</b></span><span>Disponibilité : <b>58 min</b></span>"}</div></header>
+            ? `<span><span class="domain-meta-label">Version Oracle :</span><b>${esc(state.oracleOverviewData?.metrics?.find(m=>m.label==="Version")?.value || "en attente")}</b></span><span class="domain-meta-separator" aria-hidden="true">|</span><span><span class="domain-meta-label">Démarrage :</span><b>${esc(state.oracleOverviewData?.metrics?.find(m=>m.label==="Démarrage instance")?.value || state.oracleOverviewError || "en attente")}</b></span>`
+          : `<span><span class="domain-meta-label">Version :</span><b>23.0.0.0.0</b></span><span class="domain-meta-separator" aria-hidden="true">|</span><span>${clockIcon}<span class="domain-meta-label">Disponibilité :</span><b>58 min</b></span>`}</div></header>
       <main class="domain-content ${overview ? "overview-content" : ""}">${content}</main>
     </div></div>`;
   }
@@ -1717,20 +1742,20 @@ WHERE group_id = 2
   }
   function renderOverview() {
     const quickItems = [
-      ["performance", "Performance", "⌁", "91%", "Mémoire et requêtes efficaces", "green"],
+      ["performance", "Performance", "⌁", "85%", "Mémoire et requêtes efficaces", "green"],
       ["capacity", "Capacité", "▱", "100%", "1 tablespace à surveiller", "green"],
       ["backups", "Sauvegardes", "⬡", "36%", "Sauvegarde des archive logs manquante — RPO compromis", "red"],
       ["security", "Sécurité", "⬡", "65%", "Quelques contrôles à vérifier", "amber"],
       ["logging", "Journalisation", "▤", "75%", "Configuration à vérifier", "amber"],
-      ["oracle-alerts", "Alertes", "⚠", "90%", "3 alertes sur 24h", "green"],
+      ["oracle-alerts", "Alertes", "⚠", "97%", "4 alertes sur 24h", "green"],
       ["objects", "Objets", "⬡", "85%", "Inventaire d'objets sain", "green"],
       ["locks", "Verrous", "♙", "100%", "Aucun verrou bloquant", "green"],
       ["jobs", "Jobs", "▦", "100%", "Aucun job en échec", "green"],
       ["waits", "Attentes", "◷", "100%", "Attentes Oracle sous contrôle", "green"],
       ["files", "Fichiers", "▱", "85%", "Fichiers Oracle sains", "green"],
       ["processes", "Processus", "▧", "100%", "Processus Oracle stables", "green"],
-      ["recommendations", "Recommandations", "↗", "18", "Plan d'action — 18 items, 6 à planifier", "amber"],
-      ["licenses", "Licences", "⚖", "42%", "Vue d'exposition licence disponible", "amber"]
+      ["recommendations", "Recommandations", "↗", "", "Plan d'action — 18 items, 6 à planifier", "amber"],
+      ["licenses", "Licences", "⚖", "", "Vue d'exposition licence disponible", "orange"]
     ];
     const overviewMetrics = state.oracleOverviewData?.metrics || [];
     const metricValue = label => overviewMetrics.find(metric => metric.label === label)?.value;
@@ -1740,9 +1765,9 @@ WHERE group_id = 2
     const maxTablespaceUsage = tablespacesMetric?.foot?.match(/([\d.]+)%/)?.[1];
     const tablespaceUsage = state.oracleConnected ? maxTablespaceUsage : "99.0";
     const actionButton = (label, priority) =>
-      `<button class="overview-action ${priority}" data-route="/supervision/recommendations"><span>→</span>${label}</button>`;
+      `<button class="overview-action ${priority}" data-route="/supervision/recommendations"><span>→</span><span class="overview-action-label">${label}</span></button>`;
     return `<div class="overview-page">
-      <div class="overview-toolbar">${btn("▤　Exporter en PDF","export","btn subtle")}</div>
+      <div class="overview-toolbar">${btn(`${uiIcon("fileText", "overview-export-icon")}<span>Exporter en PDF</span>`, "export", "btn subtle", 'title="Exporter la vue d\'ensemble en PDF" aria-label="Exporter la vue d\'ensemble en PDF"')}</div>
       <section class="overview-summary">
         <div class="overview-summary-heading">${uiIcon("shieldCheck", "overview-section-icon")}<h2 class="overview-eyebrow">Synthèse exécutive</h2></div>
         <div class="overview-posture">
@@ -1753,32 +1778,36 @@ WHERE group_id = 2
             <div class="overview-plan">
               <div><span>Plan d'action complet</span><span>18 au total</span></div>
               <div class="overview-priority-pills">
-                <button data-route="/supervision/recommendations"><i class="red"></i>0　Immédiate</button>
-                <button data-route="/supervision/recommendations"><i class="orange"></i>6　Prioritaire</button>
-                <button data-route="/supervision/recommendations"><i class="amber"></i>6　Surveillance</button>
-                <button data-route="/supervision/recommendations"><i class="blue"></i>6　Optimisation</button>
+                <button data-route="/supervision/recommendations"><i class="red"></i><span class="overview-priority-count">0</span><span class="overview-priority-label">Immédiate</span></button>
+                <button data-route="/supervision/recommendations"><i class="orange"></i><span class="overview-priority-count">6</span><span class="overview-priority-label">Prioritaire</span></button>
+                <button data-route="/supervision/recommendations"><i class="amber"></i><span class="overview-priority-count">6</span><span class="overview-priority-label">Surveillance</span></button>
+                <button data-route="/supervision/recommendations"><i class="blue"></i><span class="overview-priority-count">6</span><span class="overview-priority-label">Optimisation</span></button>
               </div>
             </div>
           </div>
         </div>
         <div class="overview-health">
-          <article class="overview-health-card good"><div class="overview-health-label">${uiIcon("shieldCheck", "overview-health-icon")}<span>Disponibilité</span></div><strong>Opérationnelle</strong><small>Disponibilité : 5min</small></article>
-          <article class="overview-health-card good"><div class="overview-health-label">${uiIcon("gauge", "overview-health-icon")}<span>Performance opérationnelle</span></div><strong>91% — Excellent</strong><small>Mémoire et temps de réponse satisfaisants</small></article>
+          <article class="overview-health-card good"><div class="overview-health-label">${uiIcon("shieldCheck", "overview-health-icon")}<span>Disponibilité</span></div><strong>Opérationnelle</strong><small>Disponibilité : 1h 20min</small></article>
+          <article class="overview-health-card good"><div class="overview-health-label">${uiIcon("gauge", "overview-health-icon")}<span>Performance opérationnelle</span></div><strong>85% — Excellent</strong><small>Mémoire et temps de réponse satisfaisants</small></article>
           <article class="overview-health-card good"><div class="overview-health-label">${uiIcon("trendingDown", "overview-health-icon")}<span>Niveau de risque</span></div><strong>Faible</strong><small>0 actions immédiates, 6 prioritaires</small></article>
         </div>
         <div class="overview-insights">
           <div class="overview-list">
             <h3 class="overview-eyebrow">${uiIcon("triangleAlert", "overview-insight-icon")}Points d'attention</h3>
-            <div class="overview-notice critical"><i></i><span>Sauvegardes (36%) — Sauvegardes à auditer</span></div>
-            <div class="overview-notice warning"><i></i><span>Sécurité (65%) — Audits et privilèges à vérifier</span></div>
-            <div class="overview-notice warning"><i></i><span>Journalisation (75%) — Mode journalisation à vérifier</span></div>
+            <div class="overview-list-items">
+              <div class="overview-notice critical"><i></i><span>Sauvegardes (36%) — Sauvegardes à auditer</span></div>
+              <div class="overview-notice warning"><i></i><span>Sécurité (65%) — Audits et privilèges à vérifier</span></div>
+              <div class="overview-notice warning"><i></i><span>Journalisation (75%) — Mode journalisation à vérifier</span></div>
+            </div>
             <button class="overview-link" data-route="/supervision/recommendations">Voir toutes les recommandations${uiIcon("chevronRight", "overview-link-chevron")}</button>
           </div>
           <div class="overview-list">
             <h3 class="overview-eyebrow">${uiIcon("activity", "overview-insight-icon")}Actions recommandées</h3>
-            ${actionButton("Auditer la stratégie de sauvegarde (Sauvegardes).", "critical")}
-            ${actionButton("Auditer avant action les contrôles de sécurité (Sécurité).", "warning")}
-            ${actionButton("Vérifier la configuration de journalisation (Journalisation).", "warning")}
+            <div class="overview-list-items">
+              ${actionButton("Auditer la stratégie de sauvegarde (Sauvegardes).", "critical")}
+              ${actionButton("Auditer avant action les contrôles de sécurité (Sécurité).", "warning")}
+              ${actionButton("Vérifier la configuration de journalisation (Journalisation).", "warning")}
+            </div>
           </div>
         </div>
       </section>
@@ -1805,7 +1834,7 @@ WHERE group_id = 2
                   <div class="row between"><b>${state.oracleConnected ? "Utilisation maximale" : "SYSTEM"}</b><strong>${esc(tablespaceUsage)}%</strong></div>
                   <div class="progress amber"><span style="width:${Math.min(Number(tablespaceUsage), 100)}%"></span></div>
                   <div class="overview-tablespace-info"><p>${state.oracleConnected ? `${esc(tablespacesMetric?.value || "—")} tablespaces · utilisation physique maximale` : "Surveillance recommandée"}</p>${uiIcon("info", "overview-tablespace-info-icon")}</div>
-                  <p class="overview-tablespace-foot">${state.oracleConnected ? "Marge disponible · surveiller la croissance" : "Autoextend actif"}</p>
+                  <p class="overview-tablespace-foot">${state.oracleConnected ? "Marge disponible · surveiller la croissance" : "Marge : 32767.6 GB · Autoextend actif"}</p>
                 </div>`
               : `<div class="overview-widget-empty">Les données des tablespaces ne sont pas disponibles pour cette collecte.</div>`}
             <button class="overview-widget-link" data-route="/supervision/capacity">Voir détail Capacité${uiIcon("chevronRight", "overview-widget-chevron")}</button>
@@ -1837,9 +1866,10 @@ WHERE group_id = 2
         </article>
       </section>
       <section class="overview-priority-help">
-        <button class="overview-priority-toggle" data-action="toggle-guide" aria-expanded="${state.guideOpen}">
-          <span><i>♧</i>Que regarder en priorité ?</span><span>${state.guideOpen ? "Masquer　⌃" : "Voir l'aide　⌄"}</span>
-        </button>
+        <div class="overview-priority-inner"><div class="overview-priority-row">
+          <button class="overview-priority-toggle" data-action="toggle-guide" aria-expanded="${state.guideOpen}">${uiIcon("lightbulb", "overview-priority-icon")}<span>Que regarder en priorité ?</span></button>
+          <button class="overview-help-link" data-action="toggle-guide" aria-expanded="${state.guideOpen}">${state.guideOpen ? "Masquer" : "Voir l'aide"}${uiIcon(state.guideOpen ? "chevronUp" : "chevronDown", "overview-help-chevron")}</button>
+        </div></div>
         ${state.guideOpen ? `<ul class="overview-priority-content">
           <li><strong>Le score de santé global</strong> (en haut à droite) donne une lecture rapide de l'état général. Cliquez sur le score pour voir le détail du calcul.</li>
           <li><strong>Les indicateurs vitaux</strong> (Disponibilité, Performance, Niveau de risque) résument l'état opérationnel en 3 chiffres clés.</li>
@@ -1849,7 +1879,7 @@ WHERE group_id = 2
           <li><strong>L'accès rapide aux 14 domaines</strong> permet d'explorer chaque thème — cliquez sur une carte pour ouvrir la vue dédiée.</li>
         </ul>` : ""}
       </section>
-      <footer class="overview-footer">Score calculé sur 12 domaines pondérés　·　Deynao — Supervision et diagnostic Oracle</footer>
+      <footer class="overview-footer">Score calculé sur 12 domaines pondérés<span class="overview-footer-separator">·</span><span class="overview-footer-brand">Deynao — Supervision et diagnostic Oracle</span></footer>
     </div>`;
   }
   function renderCapacity(config) {
